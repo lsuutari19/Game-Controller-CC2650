@@ -1,0 +1,22 @@
+static PIN_Handle hBuzzer;
+static PIN_State sBuzzer;
+PIN_Config cBuzzer[] = {
+  Board_BUZZER | PIN_GPIO_OUTPUT_EN | PIN_GPIO_LOW | PIN_PUSHPULL | PIN_DRVSTR_MAX,
+  PIN_TERMINATE
+};
+
+// Buzzer
+  hBuzzer = PIN_open(&sBuzzer, cBuzzer);
+  if (hBuzzer == NULL) {
+    System_abort("Pin open failed!");
+  }
+  
+while (1) {
+    buzzerOpen(hBuzzer);
+    buzzerSetFrequency(2000);
+    Task_sleep(50000 / Clock_tickPeriod);
+    buzzerClose();
+
+    Task_sleep(950000 / Clock_tickPeriod);
+  }
+
