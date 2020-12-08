@@ -1,5 +1,19 @@
-// kysy tilakoneen määrittelystä ja miten tätä tulisi while loopissa käyttää
-
+/*
+ * Lauri Suutari and Mikael Pennanen
+ * Course: Johdatus Tietokonejärjestelmiin harjoitustyö 2020
+ *Student numbers:
+ *	Lauri: 2633019
+ *	Mikael: 2468763
+ *
+ * Most of the basics of TI CC2650 obtained from:
+ * -Johdatus Tietokonejärjestelmiin course
+ * -TI Resources
+ *
+ *
+ * Music notes obtained from https://github.com/xitangg/-Pirates-of-the-Caribbean-Theme-Song/
+ blob/master/Pirates_of_the_Caribbean_-_Theme_Song.ino
+ *
+ */
 
 
 #include <stdio.h>
@@ -21,27 +35,46 @@
 #include <ti/drivers/pin/PINCC26XX.h>
 #include <driverlib/timer.h>
 #include <buzzer.h>
-
-
+#include "wireless/CWC_CC2650_154Drv.h"
+#include "wireless/address.h"
+#include <picture.h>
 
 /* Board Header files */
 #include "Board.h"
 #include "sensors/mpu9250.h"
+#include "wireless/comm_lib.h"
+#include <ti/mw/display/DisplayExt.h>
 
-
-#define STACKSIZE 2048
-Char taskStack[STACKSIZE];
-
-/*music play*/
 #define _BUZZER_H_
 #define BUZZER_FREQ_MIN            3
 #define BUZZER_FREQ_MAX            8000
 
-// *******************************
-//
+//Defining note frequency
+#define C4  262
+#define D4  294
+#define E4  330
+#define F4  349
+#define G4  392
+#define A4  440
+#define B4  494
+#define C5  523
+#define D5  587
+#define E5  659
+#define F5  698
+#define G5  784
+#define A5  880
+#define B5  988
+
+//stacksizes for tasks
+#define STACKSIZE 2048
+#define small_STACKSIZE 1024
+Char taskStack[STACKSIZE];
+Char musicStack[small_STACKSIZE];
+Char commStack[STACKSIZE];
+Char displayStack[STACKSIZE];
+
+
 // MPU GLOBAL VARIABLES
-//
-// *******************************
 static PIN_Handle hMpuPin;
 static PIN_State MpuPinState;
 static PIN_Config MpuPinConfig[] = {
@@ -49,109 +82,352 @@ static PIN_Config MpuPinConfig[] = {
     PIN_TERMINATE
 };
 
-// ******************************
-//
+
+//BUTTON
+static PIN_Handle buttonHandle;
+static PIN_State buttonState;
+PIN_Config buttonConfig[] = {
+   Board_BUTTON0  | PIN_INPUT_EN | PIN_PULLUP | PIN_IRQ_NEGEDGE,
+   PIN_TERMINATE
+};
+
+//BUTTON1
+static PIN_Handle button1Handle;
+static PIN_State button1State;
+PIN_Config button1Config[] = {
+   Board_BUTTON1  | PIN_INPUT_EN | PIN_PULLUP | PIN_IRQ_NEGEDGE,
+   PIN_TERMINATE
+};
+
+
+// display handle setup
+Display_Handle displayHandle;
+
+
 // MPU USES ITS OWN I2C INTERFACE
-//
-// ******************************
+
 static const I2CCC26XX_I2CPinCfg i2cMPUCfg = {
     .pinSDA = Board_I2C0_SDA1,
     .pinSCL = Board_I2C0_SCL1
 };
 
-// Tilaesittelyt
-enum state { WAIT=1, READ_SENSOR, UPDATE, NEW_MSG, ETEEN, TAAKSE, VASEN, OIKEA };
-enum state myState = WAIT;
+// BUZZER
+static PIN_Handle hBuzzer;
+static PIN_State sBuzzer;
+PIN_Config cBuzzer[] = {
+  Board_BUZZER | PIN_GPIO_OUTPUT_EN,
+  PIN_TERMINATE
+};
 
-Void clkFxn(UArg arg0) {
+// States
+enum state { WAIT=1, DOWN, UP, LEFT, RIGHT, PLAY, MUSIC, MUTE};
+enum wltate {NEUTRAL=1, WINGAME, LOSE};
 
-    // Muutetaan tilaa halutuksi
-    // Hox! If-lauseella tarkistetaan, että tilasiirto on mahdollinen!!
-    // Nyt sallitaan vain tilasiirtymä IDLE -> READ_SENSOR
-    if (myState == WAIT) {
+enum wltate wlState = NEUTRAL;
+enum state myState = PLAY;
 
-        // Tilasiirtymä IDLE -> READ_SENSOR
-        myState = READ_SENSOR;
-    }
+enum boolean { F=1, T };
+enum boolean updateScreen = F;
+enum boolean musicState = T;
+
+
+//Task that plays music
+Void musicTask()
+{
+	while (musicState == T)
+	{
+		buzzerOpen(hBuzzer);
+		buzzerSetFrequency(E4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(G4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(250000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+
+		if(musicState == F)
+		{
+			buzzerClose();
+			break;
+		}
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(B4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(C5);
+		Task_sleep(250000 / Clock_tickPeriod);
+		buzzerSetFrequency(C5);
+		Task_sleep(125000 / Clock_tickPeriod);
+
+		buzzerSetFrequency(C5);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(D5);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(B4);
+		Task_sleep(250000 / Clock_tickPeriod);
+		buzzerSetFrequency(B4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(G4);
+		Task_sleep(375000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+
+		if(musicState == F)
+		{
+			buzzerClose();
+			break;
+		}
+
+		buzzerSetFrequency(E4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(G4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(250000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(B4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(C5);
+		Task_sleep(250000 / Clock_tickPeriod);
+		buzzerSetFrequency(C5);
+		Task_sleep(125000 / Clock_tickPeriod);
+
+		if(musicState == F)
+		{
+			buzzerClose();
+			break;
+		}
+
+		buzzerSetFrequency(C5);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(D5);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(B4);
+		Task_sleep(250000 / Clock_tickPeriod);
+		buzzerSetFrequency(B4);
+		Task_sleep(125000 / Clock_tickPeriod);
+
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(G4);
+		Task_sleep(375000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+
+		if(musicState == F)
+		{
+			buzzerClose();
+			break;
+		}
+
+		buzzerSetFrequency(E4); //E4
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(G4);
+		Task_sleep(125000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(250000 / Clock_tickPeriod);
+		buzzerSetFrequency(A4);
+		Task_sleep(125000 / Clock_tickPeriod);
+	}
+
 }
 
-Void sensorTask(UArg arg0, UArg arg1) {
 
-    while (1) {
-        if (myState == READ_SENSOR) {
-            // Tilan toiminnallisuus
-            read_sensor_values();
-            // Tilasiirtymä READ_SENSOR -> UPDATE
-            myState = UPDATE;
+
+//commTask receives output from the outer system
+Void commTask(UArg arg0, UArg arg1)
+{
+
+   char message[16];
+   uint16_t senderAddr;
+   char lost[16] = "70,LOST GAME";
+   char win[16]  = "70,WIN";
+
+
+   int32_t result = StartReceive6LoWPAN();
+
+   if(result != true)
+   {
+      System_abort("Wireless receive start failed");
+   }
+
+   while (true)
+   {
+        if (GetRXFlag())
+        {
+           memset(message,0,16);
+           Receive6LoWPAN(&senderAddr, message, 16);
+
+		   if(strcmp(message, lost) == 0)
+		   {
+			   wlState = LOSE;
+		   }
+		   else if(strcmp(message, win) == 0)
+		   {
+			   wlState = WINGAME;
+		   }
+           System_printf(message);
+           System_flush();
         }
-        Task_sleep(..);
-    }
-}
-
-// Anturien käsittely
-Void displayTask(UArg arg0, UArg arg1) {
-
-    while (1) {
-        if (myState == UPDATE) {
-            // Tilan toiminnallisuus
-            update_screen();
-            // Tilasiirtymä UPDATE -> IDLE
-            myState = IDLE;
-        }
-        Task_sleep(..);
     }
 }
 
 
 
-// SENSOR TASK
-Void sensorFxn(UArg arg0, UArg arg1) {
+// This task handles the visuals of the software
+Void displayTask(UArg arg0, UArg arg1)
+{
+    	Display_Params displayParams;
+    	Display_Params_init(&displayParams);
+    	displayParams.lineClearMode = DISPLAY_CLEAR_BOTH;
+    	displayHandle = Display_open(Display_Type_LCD, &displayParams);
+		tContext *pContext = DisplayExt_getGrlibContext(displayHandle);
+		Display_clear(displayHandle);
+		GrClearDisplay(pContext);
+		StartReceive6LoWPAN();
+		while(1)
+		{
+			if(myState != WAIT)
+			{
+				if(updateScreen == T)
+				{
+					Display_clear(displayHandle);
+					if(myState == PLAY)
+					{
+						Display_print0(displayHandle, 5, 5, "->PLAY");
+						Display_print0(displayHandle, 6, 5, "MUSIC");
+						System_flush();
+					}
+					else if(myState == MUSIC)
+					{
+						Display_print0(displayHandle, 5, 5, "PLAY");
+						Display_print0(displayHandle, 6, 5, "->MUSIC");
+						System_flush();
+					}
+				updateScreen = F;
+				}
+			}
+			if (myState == DOWN)
+			{
+				GrImageDraw(pContext, &down, 0, 0);
+				GrFlush(pContext);
+				char message[16] = "event:DOWN";
+				Send6LoWPAN(IEEE80154_SERVER_ADDR, message, strlen(message));
+				Task_sleep(1000000 / Clock_tickPeriod);
+				StartReceive6LoWPAN();
+				GrClearDisplay(pContext);
+				myState = WAIT;
+			} else if (myState == UP)
+			{
+				GrImageDraw(pContext, &up, 0, 0);
+				GrFlush(pContext);
+				char message[16] = "event:UP";
+				Send6LoWPAN(IEEE80154_SERVER_ADDR, message, strlen(message));
+				Task_sleep(1000000 / Clock_tickPeriod);
+				StartReceive6LoWPAN();
+				GrClearDisplay(pContext);
+				myState = WAIT;
+			} else if (myState == RIGHT)
+			{
+				GrImageDraw(pContext, &right, 0, 0);
+				GrFlush(pContext);
+				char message[16] = "event:RIGHT";
+				Send6LoWPAN(IEEE80154_SERVER_ADDR, message, strlen(message));
+				StartReceive6LoWPAN();
+				Task_sleep(1000000 / Clock_tickPeriod);
+				GrClearDisplay(pContext);
+				myState = WAIT;
+			} else if (myState == LEFT)
+			{
+				char message[16] = "event:LEFT";
+				GrImageDraw(pContext, &left, 0, 0);
+				GrFlush(pContext);
+				Send6LoWPAN(IEEE80154_SERVER_ADDR, message, strlen(message));
+				StartReceive6LoWPAN();
+				Task_sleep(500000 / Clock_tickPeriod);
+				GrClearDisplay(pContext);
+				myState = WAIT;
+			} else if (wlState == LOSE)
+			{
+				int j = 0;
+				for (j = 1; j < 10; j++)
+				{
+					GrImageDraw(pContext, &lose, 0, 0);
+					GrFlush(pContext);
+					Task_sleep(500000 / Clock_tickPeriod);
+					GrImageDraw(pContext, &lose2, 0, 0);
+					GrFlush(pContext);
+					Task_sleep(500000 / Clock_tickPeriod);
+
+				}
+				GrClearDisplay(pContext);
+				updateScreen = T;
+				myState = PLAY;
+				wlState = NEUTRAL;
+
+			} else if(wlState == WINGAME)
+			{
+				int i = 0;
+				for (i = 1; i < 10; i++)
+				{
+					GrImageDraw(pContext, &win, 0, 0);
+					GrFlush(pContext);
+					Task_sleep(500000 / Clock_tickPeriod);
+					GrImageDraw(pContext, &swin, 0, 0);
+					GrFlush(pContext);
+					Task_sleep(500000 / Clock_tickPeriod);
+				}
+				GrClearDisplay(pContext);
+				updateScreen = T;
+				wlState = NEUTRAL;
+				myState = PLAY;
+			} else if (myState != PLAY && myState != MUSIC)
+			{
+				Display_print0(displayHandle, 11, 4, "waiting...");
+				Display_print0(displayHandle, 0, 5, "Menu");
+				System_flush();
+			}
+		StartReceive6LoWPAN();
+		Task_sleep(10000 / Clock_tickPeriod);
+		}
+}
+
+
+
+// Task handles reading sensors and changing states accordingly
+Void sensorTask(UArg arg0, UArg arg1)
+{
 
 	float ax, ay, az, gx, gy, gz;
 
 
-	void buzzerOpen(PIN_Handle hPinGpio);
-
-
-	I2C_Handle i2cMPU; // INTERFACE FOR MPU9250 SENSOR
+	I2C_Handle i2cMPU;
 	I2C_Params i2cMPUParams;
     I2C_Params_init(&i2cMPUParams);
     i2cMPUParams.bitRate = I2C_400kHz;
     i2cMPUParams.custom = (uintptr_t)&i2cMPUCfg;
 
-    Display_Params params; //näytön parametrit alustetaan näyttö
-    Display_Params_init(&params);
-    params.lineClearMode = DISPLAY_CLEAR_BOTH;
 
-    Display_Handle displayHandle = Display_open(Display_Type_LCD, &params);
-
-    // *******************************
-    //
-    // MPU OPEN I2C
-    //
-    // *******************************
     i2cMPU = I2C_open(Board_I2C, &i2cMPUParams);
-    if (i2cMPU == NULL) {
+    if (i2cMPU == NULL)
+    {
         System_abort("Error Initializing I2CMPU\n");
     }
 
-    // *******************************
-    //
-    // MPU POWER ON
-    //
-    // *******************************
     PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_ON);
 
-    // WAIT 100MS FOR THE SENSOR TO POWER UP
 	Task_sleep(100000 / Clock_tickPeriod);
     System_printf("MPU9250: Power ON\n");
     System_flush();
 
-    // *******************************
-    //
     // MPU9250 SETUP
-    //
-    // *******************************
 	System_printf("MPU9250: Setup and calibration...\n");
 	System_flush();
 
@@ -160,113 +436,162 @@ Void sensorFxn(UArg arg0, UArg arg1) {
 	System_printf("MPU9250: Setup and calibration OK\n");
 	System_flush();
 
-    // *******************************
-    //
-    // MPU CLOSE I2C
-    //
-    // *******************************
-    I2C_close(i2cMPU);
 
-
-	while (1) {
-	    // *******************************
-	    //
-	    // MPU OPEN I2C
-	    //
-	    // *******************************
-	    i2cMPU = I2C_open(Board_I2C, &i2cMPUParams);
-	    if (i2cMPU == NULL) {
-	        System_abort("Error Initializing I2CMPU\n");
-	    }
-
-	    // *******************************
-	    //
-	    // MPU ASK DATA
-		//
-	    // *******************************
-
-		mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
-	    // *******************************
-	    //
-	    // MPU CLOSE I2C
-	    //
-	    // *******************************
-
-		if(gx < -75)
+	while (myState != WINGAME)
+	{
+		if(myState == WAIT)
 		{
-			myState == TAAKSE;
+			mpu9250_get_data(&i2cMPU, &ax, &ay, &az, &gx, &gy, &gz);
 
-			Display_print0(displayHandle, 5, 5, "TAAKSE");
-			System_printf("taakse \n");
-			System_flush();
-			Task_sleep(1000000 / Clock_tickPeriod);
-			Display_clear(displayHandle);
-		} else if (gx > 75)
-		{
-			myState == ETEEN;
-
-			Display_print0(displayHandle, 5, 5, "ETEEN");
-			System_printf("eteen \n");
-			System_flush();
-			Task_sleep(1000000 / Clock_tickPeriod);
-			Display_clear(displayHandle);
-		} else if (gy < -75)
-		{
-			myState == VASEN;
-
-			Display_print0(displayHandle, 5, 5, "VASEN");
-			System_printf("vasen \n");
-			System_flush();
-			Task_sleep(1000000 / Clock_tickPeriod);
-			Display_clear(displayHandle);
-		} else if (gy > 75)
-		{
-			state myState == OIKEA;
-
-			Display_print0(displayHandle, 5, 5, "OIKEA");
-			System_printf("oikea \n");
-			System_flush();
-			Task_sleep(1000000 / Clock_tickPeriod);
-			Display_clear(displayHandle);
+			if(gx < -85)
+			{
+				myState = DOWN;
+				Task_sleep(1000000 / Clock_tickPeriod);
+			} else if (gx > 85)
+			{
+				myState = UP;
+				Task_sleep(1000000 / Clock_tickPeriod);
+			} else if (gy < -85)
+			{
+				myState = LEFT;
+				Task_sleep(1000000 / Clock_tickPeriod);
+			} else if (gy > 85)
+			{
+				myState = RIGHT;
+				Task_sleep(1000000 / Clock_tickPeriod);
+			}
 		}
-
-
-
-		I2C_close(i2cMPU);
-	    // WAIT 1s
-    	Task_sleep(100000 / Clock_tickPeriod);
-
-	}
-	void buzzerClose(void);
-	// MPU9250 POWER OFF
-	// Because of loop forever, code never goes here
- //   PIN_setOutputValue(hMpuPin,Board_MPU_POWER, Board_MPU_POWER_OFF);
+	Task_sleep(100000 / Clock_tickPeriod);
+    }
+	wlState = WINGAME;
 }
 
-int main(void) {
+
+//this button handles changing states in the menu / while playing
+void buttonFxn(PIN_Handle handle, PIN_Id pinId)
+{
+
+	if(myState == PLAY)
+	{
+	    myState = WAIT;
+    } else if(myState == MUSIC)
+    {
+    	if (musicState == T)
+    	{
+    		musicState = F;
+    	}
+    	myState = PLAY;
+    }  else if(myState == WAIT || wlState == WINGAME || wlState == LOSE)
+    {
+    	myState = PLAY;
+    	updateScreen = T;
+    }
+}
+
+
+// This button handles
+void menuFxn(PIN_Handle handle, PIN_Id pinId)
+{
+
+	if(myState == PLAY)
+	{
+		myState = MUSIC;
+		updateScreen = T;
+	}
+	else if(myState == MUSIC)
+	{
+		myState = PLAY;
+		updateScreen = T;
+	}
+}
+
+
+int main(void)
+{
 
 	Task_Handle task;
 	Task_Params taskParams;
-
+	Task_Handle mtask;
+	Task_Params musicParams;
+	Task_Handle displaytask;
+	Task_Params displayParams;
+    Task_Handle comtask;
+	Task_Params commParams;
     Board_initGeneral();
     Board_initI2C();
 
-    // *******************************
-    //
-    // OPEN MPU POWER PIN
-    //
-    // *******************************
-    hMpuPin = PIN_open(&MpuPinState, MpuPinConfig);
-    if (hMpuPin == NULL) {
+    //setup buzzer
+    hBuzzer = PIN_open(&sBuzzer, cBuzzer);
+    if (hBuzzer == NULL)
+    {
     	System_abort("Pin open failed!");
     }
 
+    //Board_BUTTON:s opened
+    buttonHandle = PIN_open(&buttonState, buttonConfig);
+    if (PIN_registerIntCb(buttonHandle, &buttonFxn) != 0)
+    {
+       System_abort("Error registering button callback function");
+    }
+
+    button1Handle = PIN_open(&button1State, button1Config);
+    if (PIN_registerIntCb(button1Handle, &menuFxn) != 0)
+    {
+       System_abort("Error registering button callback function");
+    }
+
+    // Open MPU_pin
+    hMpuPin = PIN_open(&MpuPinState, MpuPinConfig);
+    if (hMpuPin == NULL)
+    {
+    	System_abort("Pin open failed!");
+    }
+
+    Init6LoWPAN();
+
+    //setup music
+    Task_Params_init(&musicParams);
+    musicParams.stackSize = small_STACKSIZE;
+    musicParams.stack = &musicStack;
+    musicParams.priority = 2;
+    mtask = Task_create((Task_FuncPtr)musicTask, &musicParams, NULL);
+    if (mtask == NULL)
+    {
+        System_abort("Music task create failed!");
+    }
+
+
+    //setup wireless communications (only task with priority = 1)
+    Task_Params_init(&commParams);
+    commParams.stackSize = STACKSIZE;
+    commParams.stack = &commStack;
+    commParams.priority = 1;
+    comtask = Task_create(commTask, &commParams, NULL);
+    if (comtask == NULL)
+    {
+    	System_abort("Music task create failed!");
+    }
+
+    //setup sensorTask
     Task_Params_init(&taskParams);
     taskParams.stackSize = STACKSIZE;
     taskParams.stack = &taskStack;
-    task = Task_create((Task_FuncPtr)sensorFxn, &taskParams, NULL);
-    if (task == NULL) {
+    taskParams.priority = 2;
+    task = Task_create((Task_FuncPtr)sensorTask, &taskParams, NULL);
+    if (task == NULL)
+    {
     	System_abort("Task create failed!");
+    }
+
+    //setup display
+    Task_Params_init(&displayParams);
+    displayParams.stackSize = STACKSIZE;
+    displayParams.stack = &displayStack;
+    displayParams.priority = 2;
+    displaytask = Task_create(displayTask, &displayParams, NULL);
+    if (displaytask == NULL)
+    {
+    	System_abort("Display task create failed!");
     }
 
     /* Start BIOS */
@@ -274,3 +599,6 @@ int main(void) {
 
     return (0);
 }
+
+
+
